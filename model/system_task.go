@@ -21,6 +21,7 @@ const (
 	SystemTaskTypeModelUpdate    = "model_update"
 	SystemTaskTypeMidjourneyPoll = "midjourney_poll"
 	SystemTaskTypeAsyncTaskPoll  = "async_task_poll"
+	SystemTaskTypeBulkEmail      = "bulk_email"
 )
 
 var ErrSystemTaskLockLost = errors.New("system task lock lost")
@@ -430,13 +431,23 @@ func (task *SystemTask) DecodeState(v any) error {
 }
 
 func (task *SystemTask) ToResponse() SystemTaskResponse {
+	payload := decodeSystemTaskJSONValue(task.Payload)
+	if task.Type == SystemTaskTypeBulkEmail {
+		// Recipient addresses are an internal task snapshot. Keep them out of
+		// admin API responses while retaining them in the database for safe
+		// resume after a process restart.
+		if payloadMap, ok := payload.(map[string]any); ok {
+			delete(payloadMap, "recipients")
+		}
+	}
+
 	return SystemTaskResponse{
 		ID:        task.ID,
 		TaskID:    task.TaskID,
 		Type:      task.Type,
 		Status:    task.Status,
 		ActiveKey: task.ActiveKey,
-		Payload:   decodeSystemTaskJSONValue(task.Payload),
+		Payload:   payload,
 		State:     decodeSystemTaskJSONValue(task.State),
 		Result:    decodeSystemTaskJSONValue(task.Result),
 		Error:     task.Error,

@@ -22,6 +22,17 @@ func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(modelUpdateHandler{})
 	service.RegisterSystemTaskHandler(midjourneyPollHandler{})
 	service.RegisterSystemTaskHandler(asyncTaskPollHandler{})
+	service.RegisterSystemTaskHandler(bulkEmailHandler{})
+}
+
+// bulkEmailHandler sends one administrator-created broadcast through the
+// existing system task runner so it is durable and does not block HTTP requests.
+type bulkEmailHandler struct{}
+
+func (bulkEmailHandler) Type() string { return model.SystemTaskTypeBulkEmail }
+
+func (bulkEmailHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	service.RunBulkEmailTask(ctx, task, runnerID)
 }
 
 // channelTestHandler runs the scheduled "test all channels" job. Enablement and

@@ -19,6 +19,9 @@ For commercial licensing, please contact support@quantumnous.com
 import { api } from '@/lib/api'
 
 import type {
+  BulkEmailPreviewResponse,
+  BulkEmailRequest,
+  BulkEmailTaskResponse,
   ConfirmPaymentComplianceResponse,
   FetchUpstreamRatiosRequest,
   LogCleanupTask,
@@ -102,6 +105,30 @@ export async function fetchUpstreamRatios(request: FetchUpstreamRatiosRequest) {
   const res = await api.post<UpstreamRatiosResponse>(
     '/api/ratio_sync/fetch',
     request
+  )
+  return res.data
+}
+
+export async function previewBulkEmail(request: BulkEmailRequest) {
+  const res = await api.post<BulkEmailPreviewResponse>(
+    '/api/system-task/bulk-email',
+    { ...request, confirm: false }
+  )
+  return res.data
+}
+
+export async function startBulkEmail(request: BulkEmailRequest) {
+  const res = await api.post<BulkEmailTaskResponse>(
+    '/api/system-task/bulk-email',
+    { ...request, confirm: true }
+  )
+  return res.data
+}
+
+export async function getCurrentBulkEmailTask() {
+  const res = await api.get<BulkEmailTaskResponse>(
+    '/api/system-task/current',
+    { params: { type: 'bulk_email' } }
   )
   return res.data
 }

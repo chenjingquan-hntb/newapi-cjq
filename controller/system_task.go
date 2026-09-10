@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -11,6 +12,71 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+type bulkEmailTaskRequest struct {
+	Subject         string `json:"subject"`
+	Content         string `json:"content"`
+	Group           string `json:"group,omitempty"`
+	IncludeDisabled bool   `json:"include_disabled,omitempty"`
+	RatePerSecond   int    `json:"rate_per_second,omitempty"`
+	Confirm         bool   `json:"confirm,omitempty"`
+}
+
+func CreateBulkEmailSystemTask(c *gin.Context) {
+	var request bulkEmailTaskRequest
+	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "invalid request body"})
+		return
+	}
+
+	bulkRequest := service.BulkEmailRequest{
+		Subject:         request.Subject,
+		Content:         request.Content,
+		Group:           request.Group,
+		IncludeDisabled: request.IncludeDisabled,
+		RatePerSecond:   request.RatePerSecond,
+	}
+	bulkRequest, err := service.NormalizeBulkEmailRequest(bulkRequest)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	recipientCount, err := service.CountBulkEmailRecipients(bulkRequest)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if recipientCount == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "no matching users with email addresses"})
+		return
+	}
+	if recipientCount > service.BulkEmailMaxRecipients {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": fmt.Sprintf("recipient count exceeds the maximum of %d", service.BulkEmailMaxRecipients)})
+		return
+	}
+	if !request.Confirm {
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "confirmation required",
+			"data":    gin.H{"recipient_count": recipientCount},
+		})
+		return
+	}
+
+	task, recipientCount, err := service.StartBulkEmailTask(bulkRequest)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "bulk email task started",
+		"data": gin.H{
+			"recipient_count": recipientCount,
+			"task":            task.ToResponse(),
+		},
+	})
+}
 func CreateLogCleanupSystemTask(c *gin.Context) {
 	targetTimestamp, _ := strconv.ParseInt(c.Query("target_timestamp"), 10, 64)
 	if targetTimestamp == 0 {

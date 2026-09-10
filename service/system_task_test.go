@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -231,4 +232,75 @@ func TestEnqueueSystemTaskReportsCreatedAndExistingActive(t *testing.T) {
 	require.True(t, created)
 	require.NotNil(t, second)
 	assert.NotEqual(t, first.TaskID, second.TaskID)
+}
+
+func TestNormalizeBulkEmailRequest(t *testing.T) {
+	tests := []struct {
+		name      string
+		request   BulkEmailRequest
+		wantError string
+		wantRate  int
+	}{
+		{
+			name:     "defaults rate and trims fields",
+			request:  BulkEmailRequest{Subject: " subject ", Content: " content ", RatePerSecond: 0},
+			wantRate: BulkEmailDefaultRate,
+		},
+		{
+			name:      "requires subject",
+			request:   BulkEmailRequest{Content: "content"},
+			wantError: "email subject is required",
+		},
+		{
+			name:      "requires content",
+			request:   BulkEmailRequest{Subject: "subject"},
+			wantError: "email content is required",
+		},
+		{
+			name:      "rejects invalid rate",
+			request:   BulkEmailRequest{Subject: "subject", Content: "content", RatePerSecond: BulkEmailMaxRate + 1},
+			wantError: "rate_per_second must be between 1 and 20",
+		},
+		{
+			name:      "rejects oversized subject",
+			request:   BulkEmailRequest{Subject: strings.Repeat("s", BulkEmailMaxSubject+1), Content: "content"},
+			wantError: "email subject must be at most 200 bytes",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := NormalizeBulkEmailRequest(tt.request)
+			if tt.wantError != "" {
+				require.EqualError(t, err, tt.wantError)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantRate, got.RatePerSecond)
+			assert.Equal(t, "subject", got.Subject)
+			assert.Equal(t, "content", got.Content)
+		})
+	}
+}
+
+func TestBulkEmailRecipientsFiltersDisabledAndDeduplicates(t *testing.T) {
+	truncate(t)
+
+	users := []model.User{
+		{Id: 1, Username: "enabled-1", Password: "password", Email: " User@example.com ", AffCode: "aff-1", Status: common.UserStatusEnabled, Group: "default"},
+		{Id: 2, Username: "enabled-2", Password: "password", Email: "user@example.com", AffCode: "aff-2", Status: common.UserStatusEnabled, Group: "default"},
+		{Id: 3, Username: "disabled", Password: "password", Email: "disabled@example.com", AffCode: "aff-3", Status: common.UserStatusDisabled, Group: "default"},
+		{Id: 4, Username: "other-group", Password: "password", Email: "other@example.com", AffCode: "aff-4", Status: common.UserStatusEnabled, Group: "other"},
+	}
+	require.NoError(t, model.DB.Create(&users).Error)
+
+	recipients, err := bulkEmailRecipients(BulkEmailRequest{Group: "default"})
+	require.NoError(t, err)
+	require.Len(t, recipients, 1)
+	assert.Equal(t, "User@example.com", recipients[0].Email)
+
+	recipients, err = bulkEmailRecipients(BulkEmailRequest{Group: "default", IncludeDisabled: true})
+	require.NoError(t, err)
+	require.Len(t, recipients, 2)
+	assert.Equal(t, "disabled@example.com", recipients[1].Email)
 }

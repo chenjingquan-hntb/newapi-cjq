@@ -72,6 +72,42 @@ export type SystemTask<
   updated_at: number
 }
 
+
+export type BulkEmailRequest = {
+  subject: string
+  content: string
+  group?: string
+  include_disabled?: boolean
+  rate_per_second?: number
+}
+
+export type BulkEmailState = {
+  total: number
+  processed: number
+  succeeded: number
+  failed: number
+  progress: number
+}
+
+export type BulkEmailResult = {
+  total: number
+  succeeded: number
+  failed: number
+}
+
+export type BulkEmailTask = SystemTask<
+  BulkEmailRequest,
+  BulkEmailState,
+  BulkEmailResult
+>
+
+export type BulkEmailPreviewResponse = {
+  success: boolean
+  message: string
+  data?: { recipient_count: number }
+}
+
+export type BulkEmailTaskResponse = SystemTaskResponse<BulkEmailTask>
 export type LogCleanupTaskPayload = {
   target_timestamp: number
   batch_size: number
