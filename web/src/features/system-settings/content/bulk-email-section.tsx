@@ -16,8 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Eye, Mail, RefreshCw, Send } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -38,27 +39,19 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
 import { Textarea } from '@/components/ui/textarea'
+
 import {
   getCurrentBulkEmailTask,
   previewBulkEmail,
   startBulkEmail,
 } from '../api'
-import type {
-  BulkEmailRequest,
-  BulkEmailState,
-  BulkEmailTask,
-} from '../types'
 import { SettingsSection } from '../components/settings-section'
+import type { BulkEmailRequest } from '../types'
 
 type BulkEmailSectionProps = Record<string, never>
 
 const DEFAULT_RATE = 2
 const POLL_INTERVAL_MS = 5000
-
-function getTaskState(task: BulkEmailTask | null): BulkEmailState | null {
-  if (!task?.state) return null
-  return task.state
-}
 
 export function BulkEmailSection(_: BulkEmailSectionProps) {
   const { t } = useTranslation()
@@ -68,7 +61,7 @@ export function BulkEmailSection(_: BulkEmailSectionProps) {
   const [includeDisabled, setIncludeDisabled] = useState(false)
   const [ratePerSecond, setRatePerSecond] = useState(DEFAULT_RATE)
   const [recipientCount, setRecipientCount] = useState<number | null>(null)
-  const [currentTask, setCurrentTask] = useState<BulkEmailTask | null>(null)
+  const queryClient = useQueryClient()
   const [isPreviewing, setIsPreviewing] = useState(false)
   const [isStarting, setIsStarting] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -82,27 +75,24 @@ export function BulkEmailSection(_: BulkEmailSectionProps) {
     rate_per_second: ratePerSecond,
   })
 
-  const refreshTask = useCallback(async () => {
-    const response = await getCurrentBulkEmailTask()
-    if (!response.success) {
-      throw new Error(response.message || t('Failed to load the current task.'))
-    }
-    setCurrentTask(response.data ?? null)
-  }, [t])
-
-  useEffect(() => {
-    void refreshTask().catch(() => undefined)
-  }, [refreshTask])
-
-  useEffect(() => {
-    if (!currentTask || !['pending', 'running'].includes(currentTask.status)) {
-      return
-    }
-    const timer = window.setInterval(() => {
-      void refreshTask().catch(() => undefined)
-    }, POLL_INTERVAL_MS)
-    return () => window.clearInterval(timer)
-  }, [currentTask, refreshTask])
+  const { data: currentTask = null, refetch } = useQuery({
+    queryKey: ['system-task', 'bulk-email'],
+    queryFn: async () => {
+      const response = await getCurrentBulkEmailTask()
+      if (!response.success) {
+        throw new Error(
+          response.message || t('Failed to load the current task.')
+        )
+      }
+      return response.data ?? null
+    },
+    refetchInterval: (query) => {
+      const status = query.state.data?.status
+      return status === 'pending' || status === 'running'
+        ? POLL_INTERVAL_MS
+        : false
+    },
+  })
 
   const handlePreview = async () => {
     setIsPreviewing(true)
@@ -126,14 +116,18 @@ export function BulkEmailSection(_: BulkEmailSectionProps) {
     try {
       const response = await startBulkEmail(request())
       if (!response.success || !response.data) {
-        throw new Error(response.message || t('Failed to start the email task.'))
+        throw new Error(
+          response.message || t('Failed to start the email task.')
+        )
       }
-      setCurrentTask(response.data)
+      queryClient.setQueryData(['system-task', 'bulk-email'], response.data)
       setConfirmOpen(false)
       toast.success(t('Email task started.'))
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : t('Failed to start the email task.')
+        error instanceof Error
+          ? error.message
+          : t('Failed to start the email task.')
       )
     } finally {
       setIsStarting(false)
@@ -143,18 +137,21 @@ export function BulkEmailSection(_: BulkEmailSectionProps) {
   const handleRefresh = async () => {
     setIsRefreshing(true)
     try {
-      await refreshTask()
+      await refetch({ throwOnError: true })
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : t('Failed to load the current task.')
+        error instanceof Error
+          ? error.message
+          : t('Failed to load the current task.')
       )
     } finally {
       setIsRefreshing(false)
     }
   }
 
-  const state = getTaskState(currentTask)
-  const isActive = currentTask !== null && ['pending', 'running'].includes(currentTask.status)
+  const state = currentTask?.state
+  const isActive =
+    currentTask !== null && ['pending', 'running'].includes(currentTask.status)
   const progress = Math.min(100, Math.max(0, state?.progress ?? 0))
 
   return (
@@ -164,7 +161,9 @@ export function BulkEmailSection(_: BulkEmailSectionProps) {
           <Mail />
           <AlertTitle>{t('Send email to users')}</AlertTitle>
           <AlertDescription>
-            {t('Messages are sent asynchronously through the configured SMTP server.')}
+            {t(
+              'Messages are sent asynchronously through the configured SMTP server.'
+            )}
           </AlertDescription>
         </Alert>
 
@@ -210,7 +209,9 @@ export function BulkEmailSection(_: BulkEmailSectionProps) {
               min={1}
               max={20}
               value={ratePerSecond}
-              onChange={(event) => setRatePerSecond(Number(event.target.value) || 0)}
+              onChange={(event) =>
+                setRatePerSecond(Number(event.target.value) || 0)
+              }
             />
             <span className='text-muted-foreground text-xs'>
               {t('Allowed range: 1-20 emails per second.')}
@@ -223,8 +224,13 @@ export function BulkEmailSection(_: BulkEmailSectionProps) {
               onCheckedChange={setIncludeDisabled}
               id='bulk-email-include-disabled'
             />
-            <label htmlFor='bulk-email-include-disabled' className='space-y-0.5'>
-              <span className='block text-sm font-medium'>{t('Include disabled users')}</span>
+            <label
+              htmlFor='bulk-email-include-disabled'
+              className='space-y-0.5'
+            >
+              <span className='block text-sm font-medium'>
+                {t('Include disabled users')}
+              </span>
               <span className='text-muted-foreground block text-xs'>
                 {t('Disabled users are excluded by default.')}
               </span>
@@ -233,7 +239,12 @@ export function BulkEmailSection(_: BulkEmailSectionProps) {
         </div>
 
         <div className='flex flex-wrap items-center gap-2'>
-          <Button type='button' variant='outline' onClick={handlePreview} disabled={isPreviewing || isActive}>
+          <Button
+            type='button'
+            variant='outline'
+            onClick={handlePreview}
+            disabled={isPreviewing || isActive}
+          >
             <Eye data-icon='inline-start' />
             {isPreviewing ? t('Loading...') : t('Preview recipients')}
           </Button>
@@ -246,7 +257,9 @@ export function BulkEmailSection(_: BulkEmailSectionProps) {
             {t('Send email')}
           </Button>
           {recipientCount !== null && (
-            <Badge variant='outline'>{t('Recipient count: {{count}}', { count: recipientCount })}</Badge>
+            <Badge variant='outline'>
+              {t('Recipient count: {{count}}', { count: recipientCount })}
+            </Badge>
           )}
         </div>
 
@@ -257,14 +270,25 @@ export function BulkEmailSection(_: BulkEmailSectionProps) {
                 <span className='text-sm font-medium'>{t('Current task')}</span>
                 <Badge variant='secondary'>{t(currentTask.status)}</Badge>
               </div>
-              <Button type='button' variant='ghost' size='sm' onClick={handleRefresh} disabled={isRefreshing}>
+              <Button
+                type='button'
+                variant='ghost'
+                size='sm'
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+              >
                 <RefreshCw data-icon='inline-start' />
                 {t('Refresh')}
               </Button>
             </div>
             <Progress value={progress} />
             <div className='text-muted-foreground flex flex-wrap justify-between gap-2 text-xs'>
-              <span>{t('Processed {{processed}} of {{total}}', { processed: state.processed, total: state.total })}</span>
+              <span>
+                {t('Processed {{processed}} of {{total}}', {
+                  processed: state.processed,
+                  total: state.total,
+                })}
+              </span>
               <span>{progress}%</span>
             </div>
           </div>
@@ -272,11 +296,15 @@ export function BulkEmailSection(_: BulkEmailSectionProps) {
 
         {!isActive && currentTask && (
           <div className='text-muted-foreground rounded-xl border border-dashed p-4 text-sm'>
-            {t('Last task: {{status}}. Succeeded: {{succeeded}}, failed: {{failed}}.', {
-              status: t(currentTask.status),
-              succeeded: currentTask.result?.succeeded ?? state?.succeeded ?? 0,
-              failed: currentTask.result?.failed ?? state?.failed ?? 0,
-            })}
+            {t(
+              'Last task: {{status}}. Succeeded: {{succeeded}}, failed: {{failed}}.',
+              {
+                status: t(currentTask.status),
+                succeeded:
+                  currentTask.result?.succeeded ?? state?.succeeded ?? 0,
+                failed: currentTask.result?.failed ?? state?.failed ?? 0,
+              }
+            )}
           </div>
         )}
       </div>
@@ -286,9 +314,12 @@ export function BulkEmailSection(_: BulkEmailSectionProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>{t('Confirm bulk email')}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t('This will send the message to {{count}} recipients. Continue?', {
-                count: recipientCount ?? 0,
-              })}
+              {t(
+                'This will send the message to {{count}} recipients. Continue?',
+                {
+                  count: recipientCount ?? 0,
+                }
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

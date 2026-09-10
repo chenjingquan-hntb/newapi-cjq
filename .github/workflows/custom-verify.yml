@@ -58,7 +58,8 @@ jobs:
           bun-version: '1.4.0'
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
-      - run: bun run test
+      # Bound test workers on shared runners without skipping tests or adding retries.
+      - run: bun run test -- --maxWorkers=2
       - run: bun run build
 
   database-regressions:
