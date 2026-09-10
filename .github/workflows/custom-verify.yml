@@ -1,0 +1,116 @@
+name: Verify custom new-api
+
+on:
+  push:
+    branches:
+      - codex/feature/**
+      - codex/integrate/**
+      - codex/custom-main
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      revision:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      GOWORK: 'off'
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            relaykit/go.sum
+      - name: Vet, independently build, and test
+        run: |
+          mkdir -p web/dist
+          touch web/dist/index.html
+          go vet ./...
+          go build ./...
+          (cd relaykit && GOWORK=off go vet ./... && GOWORK=off go build ./...)
+          make test
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: '1.4.0'
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run test
+      - run: bun run build
+
+  database-regressions:
+    # Isolated regression coverage, not authorization for a production migration.
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: isolated-test-only
+          MYSQL_DATABASE: verify_model
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pisolated-test-only"
+          --health-interval=10s --health-timeout=5s --health-retries=20
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: isolated-test-only
+          POSTGRES_DB: verify_model
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d verify_model"
+          --health-interval=10s --health-timeout=5s --health-retries=20
+    env:
+      GOWORK: 'off'
+      TEST_MYSQL_DSN: root:isolated-test-only@tcp(127.0.0.1:3306)/verify_model?charset=utf8mb4&parseTime=True&loc=Local
+      TEST_POSTGRES_DSN: postgres://postgres:isolated-test-only@127.0.0.1:5432/verify_model?sslmode=disable
+      TEST_FIXED_MYSQL_DSN: root:isolated-test-only@tcp(127.0.0.1:3306)/verify_billing?charset=utf8mb4&parseTime=True&loc=Local
+      TEST_FIXED_POSTGRES_DSN: postgres://postgres:isolated-test-only@127.0.0.1:5432/verify_billing?sslmode=disable
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+      - name: Create isolated billing databases and record engine versions
+        env:
+          MYSQL_CONTAINER: ${{ job.services.mysql.id }}
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          docker exec "$MYSQL_CONTAINER" mysql -uroot -pisolated-test-only -e 'SELECT VERSION(); CREATE DATABASE verify_billing;'
+          docker exec "$POSTGRES_CONTAINER" psql -U postgres -c 'SELECT VERSION();'
+          docker exec "$POSTGRES_CONTAINER" createdb -U postgres verify_billing
+      - name: Exercise existing migration and billing regressions on real engines
+        run: |
+          set -euo pipefail
+          go test -count=1 -v ./model -run 'Migration|PrefillGroup|TokenKey'
+          go test -count=1 -v ./service -run '^TestFixedPriceBillingDatabaseMatrix$'
