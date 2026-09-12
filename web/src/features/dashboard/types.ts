@@ -272,3 +272,51 @@ export interface FAQItem {
   question: string
   answer: string
 }
+
+export interface OperationsSummary {
+  quota: {
+    total: number
+    export_enabled: boolean
+    export_interval_minutes: number
+  }
+  new_users: { count: number }
+  topups: { amount: number; order_count: number; payer_count: number }
+  previous?: { quota: number; new_users: number; topup_amount: number }
+  updated_at: number
+}
+
+export interface OperationsRegistrationPoint {
+  date: string
+  count: number
+}
+
+export interface OperationsTopUpPoint {
+  date: string
+  amount: number
+  order_count: number
+  payer_count: number
+}
+
+export interface OperationsQuotaRank {
+  user_id: number
+  username: string
+  quota: number
+  count: number
+}
+
+export interface OperationsTopUpRank {
+  user_id: number
+  username: string
+  amount: number
+  order_count: number
+}
+
+export interface OperationsFinance {
+  status: string
+  net_profit: number | null
+  profit_margin: number | null
+  revenue: number
+  upstream_cost: number | null
+  currency: string
+  updated_at: number
+}

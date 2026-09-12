@@ -22,6 +22,12 @@ import type {
   FlowQuotaDataItem,
   QuotaDataItem,
   UptimeGroupResult,
+  OperationsFinance,
+  OperationsQuotaRank,
+  OperationsRegistrationPoint,
+  OperationsSummary,
+  OperationsTopUpPoint,
+  OperationsTopUpRank,
 } from './types'
 
 // ============================================================================
@@ -88,6 +94,57 @@ export async function getFlowQuotaDates(
 export async function getUptimeStatus() {
   const res = await api.get<{ success: boolean; data: UptimeGroupResult[] }>(
     '/api/uptime/status'
+  )
+  return res.data
+}
+
+type OperationsRange = {
+  start_timestamp: number
+  end_timestamp: number
+}
+
+export async function getOperationsSummary(
+  params: OperationsRange &
+    Partial<{
+      previous_start_timestamp: number
+      previous_end_timestamp: number
+    }>
+) {
+  const res = await api.get<{ success: boolean; data: OperationsSummary }>(
+    '/api/dashboard/operations/summary',
+    { params }
+  )
+  return res.data
+}
+
+export async function getOperationsRegistrations(params: OperationsRange) {
+  const res = await api.get<{
+    success: boolean
+    data: OperationsRegistrationPoint[]
+  }>('/api/dashboard/operations/registrations', { params })
+  return res.data
+}
+
+export async function getOperationsTopUps(params: OperationsRange) {
+  const res = await api.get<{
+    success: boolean
+    data: { points: OperationsTopUpPoint[]; ranking: OperationsTopUpRank[] }
+  }>('/api/dashboard/operations/topups', { params })
+  return res.data
+}
+
+export async function getOperationsQuotaRanking(params: OperationsRange) {
+  const res = await api.get<{
+    success: boolean
+    data: OperationsQuotaRank[]
+  }>('/api/dashboard/operations/quota-ranking', { params })
+  return res.data
+}
+
+export async function getOperationsFinance(params: OperationsRange) {
+  const res = await api.get<{ success: boolean; data: OperationsFinance }>(
+    '/api/dashboard/operations/finance',
+    { params }
   )
   return res.data
 }

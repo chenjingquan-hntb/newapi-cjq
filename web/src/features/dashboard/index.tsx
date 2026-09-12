@@ -18,7 +18,14 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { Eye, EyeOff } from 'lucide-react'
-import { useState, useCallback, useMemo, lazy, Suspense } from 'react'
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  lazy,
+  Suspense,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
@@ -113,6 +120,12 @@ const LazyFlowCharts = lazy(() =>
   }))
 )
 
+const LazyOperationsDashboard = lazy(() =>
+  import('./components/operations/operations-dashboard').then((m) => ({
+    default: m.OperationsDashboard,
+  }))
+)
+
 function LogStatCardsFallback() {
   return (
     <div className='overflow-hidden rounded-lg border'>
@@ -189,6 +202,9 @@ const SECTION_META: Record<DashboardSectionId, { titleKey: string }> = {
   users: {
     titleKey: 'User Analytics',
   },
+  operations: {
+    titleKey: 'Operations Analytics',
+  },
 }
 
 export function Dashboard() {
@@ -245,10 +261,21 @@ export function Dashboard() {
 
   const meta = SECTION_META[activeSection] ?? SECTION_META.overview
   const isAdmin = Boolean(userRole && userRole >= ROLE.ADMIN)
+  useEffect(() => {
+    if (activeSection === 'operations' && !isAdmin) {
+      void navigate({
+        to: '/dashboard/$section',
+        params: { section: 'overview' },
+        replace: true,
+      })
+    }
+  }, [activeSection, isAdmin, navigate])
   const visibleSections = useMemo(
     () =>
       DASHBOARD_SECTION_IDS.filter(
-        (section) => section !== 'overview' && (section !== 'users' || isAdmin)
+        (section) =>
+          section !== 'overview' &&
+          (!['users', 'operations'].includes(section) || isAdmin)
       ),
     [isAdmin]
   )
@@ -398,6 +425,13 @@ export function Dashboard() {
                   filters={userChartsFilters}
                   onFiltersChange={setUserChartsFilters}
                 />
+              </Suspense>
+            </FadeIn>
+          )}
+          {activeSection === 'operations' && isAdmin && (
+            <FadeIn>
+              <Suspense fallback={<ModelChartsFallback />}>
+                <LazyOperationsDashboard />
               </Suspense>
             </FadeIn>
           )}

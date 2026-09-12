@@ -340,6 +340,16 @@ func SetApiRouter(router *gin.Engine) {
 		dataRoute.GET("/flow", middleware.AdminAuth(), controller.GetAllFlowQuotaDates)
 		dataRoute.GET("/flow/self", middleware.UserAuth(), controller.GetUserFlowQuotaDates)
 
+		operationsRoute := apiRouter.Group("/dashboard/operations")
+		operationsRoute.Use(middleware.AdminAuth())
+		{
+			operationsRoute.GET("/summary", controller.GetOperationsSummary)
+			operationsRoute.GET("/quota-ranking", controller.GetOperationsQuotaRanking)
+			operationsRoute.GET("/registrations", controller.GetOperationsRegistrations)
+			operationsRoute.GET("/topups", controller.GetOperationsTopUps)
+			operationsRoute.GET("/finance", controller.GetOperationsFinance)
+		}
+
 		logRoute.Use(middleware.CORS(), middleware.CriticalRateLimit())
 		{
 			logRoute.GET("/token", middleware.TokenAuthReadOnly(), controller.GetLogByKey)
