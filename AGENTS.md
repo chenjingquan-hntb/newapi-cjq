@@ -38,6 +38,13 @@ This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI pro
 
 ## Rules
 
+### Custom Maintenance Workflow (Mandatory)
+
+- Before any second-party feature development, upstream synchronization, conflict resolution, custom release, or custom deployment work, MUST read and follow `CUSTOM_MAINTENANCE.md`.
+- The user is the final approval gate. Complete all reversible investigation, implementation, conflict resolution, testing, commits, and candidate-branch pushes before presenting one complete review package.
+- Do not update `codex/custom-main`, create an approved release tag, deploy, migrate a production database, or move a production pointer until the user gives final approval.
+- Never develop on `upstream-sync`, push to `origin`, or use `reset --hard` plus force-push as the normal way to absorb upstream changes. Merge a fixed upstream tag or SHA through a `codex/integrate/*` candidate branch.
+
 ### Common Code Quality
 
 - New code should stay direct and readable. Prefer early returns, clear branches, and well-named local variables to deep nesting or layered control flow.
